@@ -1,0 +1,389 @@
+openapi: 3.0.3
+info:
+  title: qm-secrets API
+  description: |
+    REST API for secrets management backed by DynamoDB (metadata + billet ACLs)
+    and AWS Secrets Manager (secret values).
+
+    ## Authentication
+
+    All endpoints except `/health` and documentation require a bearer JWT issued
+    by the configured OIDC IdP. The token must include a `billets` claim listing
+    the caller's authorization billets.
+
+    ## Authorization
+
+    - **Owners** can update billet metadata and set `value1` / `value2`.
+    - **Retrievers** can list and retrieve secrets they have access to.
+    - On create or metadata update, at least one owner billet must overlap with
+      the caller's billets.
+  version: 1.0.0
+
+servers:
+  - url: /
+    description: Current host
+
+tags:
+  - name: health
+    description: Liveness
+  - name: secrets
+    description: Secret CRUD and polling
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is up
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /secrets:
+    get:
+      tags: [secrets]
+      summary: List accessible secrets
+      description: |
+        Returns metadata for secrets the caller can read (owner or retriever billet).
+        Values are not included; use `GET /secrets/{name}` to fetch values from ASM.
+      operationId: listSecrets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of secret summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SecretSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      tags: [secrets]
+      summary: Create a secret
+      description: |
+        Creates metadata in DynamoDB and values in AWS Secrets Manager.
+        At least one owner billet must overlap with the caller's billets.
+      operationId: createSecret
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSecretRequest"
+      responses:
+        "201":
+          description: Secret created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /secrets/poll:
+    post:
+      tags: [secrets]
+      summary: Poll for updated secrets
+      description: |
+        Given a list of secret names and the client's last known `last_updated`
+        timestamps, returns summaries for secrets that have changed since.
+        Does not fetch values from ASM; clients should follow up with
+        `GET /secrets/{name}` for each updated entry.
+      operationId: pollSecrets
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollRequest"
+      responses:
+        "200":
+          description: Secrets updated since client's last known state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PollResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /secrets/{name}:
+    parameters:
+      - $ref: "#/components/parameters/SecretName"
+
+    get:
+      tags: [secrets]
+      summary: Retrieve a secret
+      description: |
+        Returns full secret metadata and values. Fetches `value1` and `value2`
+        from AWS Secrets Manager. Caller must hold an owner or retriever billet.
+      operationId: getSecret
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Full secret including values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Secret"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      tags: [secrets]
+      summary: Update a secret
+      description: |
+        Updates billet metadata and/or values. Caller must hold an owner billet.
+        When values change, `last_updated` is set automatically.
+        When metadata changes, at least one new owner billet must overlap with
+        the caller's billets.
+      operationId: updateSecret
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSecretRequest"
+      responses:
+        "200":
+          description: Updated secret summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [secrets]
+      summary: Delete a secret
+      description: |
+        Deletes metadata from DynamoDB and values from AWS Secrets Manager.
+        Caller must hold an owner billet.
+      operationId: deleteSecret
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Secret deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OIDC-issued JWT. Validated via the issuer's JWKS. Must include a
+        `billets` array claim, e.g. `["team-a", "team-b"]`.
+
+  parameters:
+    SecretName:
+      name: name
+      in: path
+      required: true
+      description: Secret name (may contain slashes, e.g. `my-app/config`)
+      schema:
+        type: string
+      example: my-app/config
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: forbidden
+
+    SecretSummary:
+      type: object
+      required: [name, owners, retrievers, last_updated, can_update]
+      properties:
+        name:
+          type: string
+          example: my-app/config
+        owners:
+          type: array
+          items:
+            type: string
+          example: [team-a]
+        retrievers:
+          type: array
+          items:
+            type: string
+          example: [team-b, team-c]
+        last_updated:
+          type: string
+          format: date-time
+          example: "2026-06-21T14:30:00Z"
+        can_update:
+          type: boolean
+          description: True when the caller holds an owner billet
+          example: true
+
+    Secret:
+      allOf:
+        - $ref: "#/components/schemas/SecretSummary"
+        - type: object
+          properties:
+            value1:
+              type: string
+              description: Green deployment value blob
+            value2:
+              type: string
+              description: Blue deployment value blob
+
+    CreateSecretRequest:
+      type: object
+      required: [name, owners]
+      properties:
+        name:
+          type: string
+          example: my-app/config
+        owners:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example: [team-a]
+        retrievers:
+          type: array
+          items:
+            type: string
+          example: [team-b, team-c]
+        value1:
+          type: string
+          description: Initial green value
+        value2:
+          type: string
+          description: Initial blue value
+
+    UpdateSecretRequest:
+      type: object
+      properties:
+        owners:
+          type: array
+          items:
+            type: string
+        retrievers:
+          type: array
+          items:
+            type: string
+        value1:
+          type: string
+          description: New green value (omit to leave unchanged)
+        value2:
+          type: string
+          description: New blue value (omit to leave unchanged)
+
+    PollEntry:
+      type: object
+      required: [name, last_updated]
+      properties:
+        name:
+          type: string
+          example: my-app/config
+        last_updated:
+          type: string
+          format: date-time
+          example: "2026-06-21T12:00:00Z"
+
+    PollRequest:
+      type: object
+      required: [secrets]
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: "#/components/schemas/PollEntry"
+
+    PollResponse:
+      type: object
+      required: [updated]
+      properties:
+        updated:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecretSummary"
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Caller lacks required billet access
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Secret not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

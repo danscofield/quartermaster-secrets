@@ -1,0 +1,24 @@
+# Copy to config.yaml and adjust for your environment.
+# Override any value with environment variables (see README).
+
+server:
+  addr: ":8080"
+  tls:
+    # Both cert_file and key_file must be set to enable HTTPS.
+    # cert_file: /etc/qm-secrets/tls.crt
+    # key_file: /etc/qm-secrets/tls.key
+
+aws:
+  region: us-east-1
+
+dynamodb:
+  table: qm-secrets
+
+secrets_manager:
+  prefix: qm-secrets
+
+oidc:
+  issuer: https://idp.example.com
+  audience: qm-secrets
+  # Dev only: skip TLS verification when fetching OIDC discovery / JWKS
+  insecure_skip_tls_verify: false

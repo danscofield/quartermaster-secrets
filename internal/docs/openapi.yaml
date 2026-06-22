@@ -231,10 +231,11 @@ components:
       name: name
       in: path
       required: true
-      description: Secret name (may contain slashes, e.g. `my-app/config`)
+      description: Secret name (letters, digits, and periods only)
       schema:
         type: string
-      example: my-app/config
+        pattern: '^[a-zA-Z0-9.]+$'
+      example: myapp.config
 
   schemas:
     Error:
@@ -251,7 +252,8 @@ components:
       properties:
         name:
           type: string
-          example: my-app/config
+          pattern: '^[a-zA-Z0-9.]+$'
+          example: myapp.config
         owners:
           type: array
           items:
@@ -289,7 +291,8 @@ components:
       properties:
         name:
           type: string
-          example: my-app/config
+          pattern: '^[a-zA-Z0-9.]+$'
+          example: myapp.config
         owners:
           type: array
           minItems: 1
@@ -332,7 +335,8 @@ components:
       properties:
         name:
           type: string
-          example: my-app/config
+          pattern: '^[a-zA-Z0-9.]+$'
+          example: myapp.config
         last_updated:
           type: string
           format: date-time

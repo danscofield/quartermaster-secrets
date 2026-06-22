@@ -137,7 +137,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrForbidden):
 		writeError(w, http.StatusForbidden, "forbidden")
 	default:
-		if strings.Contains(err.Error(), "is required") {
+		if model.IsValidationError(err) || strings.Contains(err.Error(), "is required") {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

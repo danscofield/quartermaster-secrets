@@ -21,8 +21,8 @@ func NewSecretService(meta *store.DynamoDBStore, values *store.SecretsManagerSto
 }
 
 func (s *SecretService) Create(ctx context.Context, callerBillets []string, req model.CreateSecretRequest) (*model.SecretSummary, error) {
-	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+	if err := model.ValidateSecretName(req.Name); err != nil {
+		return nil, err
 	}
 	if len(req.Owners) == 0 {
 		return nil, fmt.Errorf("at least one owner billet is required")
@@ -72,6 +72,9 @@ func (s *SecretService) List(ctx context.Context, callerBillets []string) ([]mod
 }
 
 func (s *SecretService) Get(ctx context.Context, callerBillets []string, name string) (*model.Secret, error) {
+	if err := model.ValidateSecretName(name); err != nil {
+		return nil, err
+	}
 	meta, err := s.meta.Get(ctx, name)
 	if err != nil {
 		return nil, err
@@ -96,6 +99,9 @@ func (s *SecretService) Get(ctx context.Context, callerBillets []string, name st
 }
 
 func (s *SecretService) Update(ctx context.Context, callerBillets []string, name string, req model.UpdateSecretRequest) (*model.SecretSummary, error) {
+	if err := model.ValidateSecretName(name); err != nil {
+		return nil, err
+	}
 	meta, err := s.meta.Get(ctx, name)
 	if err != nil {
 		return nil, err
@@ -172,6 +178,9 @@ func (s *SecretService) Update(ctx context.Context, callerBillets []string, name
 }
 
 func (s *SecretService) Delete(ctx context.Context, callerBillets []string, name string) error {
+	if err := model.ValidateSecretName(name); err != nil {
+		return err
+	}
 	meta, err := s.meta.Get(ctx, name)
 	if err != nil {
 		return err
@@ -190,6 +199,9 @@ func (s *SecretService) Poll(ctx context.Context, callerBillets []string, req mo
 	var updated []model.SecretSummary
 
 	for _, entry := range req.Secrets {
+		if err := model.ValidateSecretName(entry.Name); err != nil {
+			return nil, err
+		}
 		meta, err := s.meta.Get(ctx, entry.Name)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {

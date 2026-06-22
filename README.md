@@ -47,12 +47,14 @@ JWT claim shape:
 | DELETE | `/secrets/{name}` | Delete secret (owners only) |
 | POST | `/secrets/poll` | Return secrets updated since client's last known `last_updated` |
 
+Secret names must match `^[a-zA-Z0-9.]+$` (letters, digits, and periods only).
+
 ### Create secret
 
 ```json
 POST /secrets
 {
-  "name": "my-app/config",
+  "name": "myapp.config",
   "owners": ["team-a"],
   "retrievers": ["team-b", "team-c"],
   "value1": "green-value",
@@ -66,7 +68,7 @@ POST /secrets
 POST /secrets/poll
 {
   "secrets": [
-    { "name": "my-app/config", "last_updated": "2026-06-21T12:00:00Z" }
+    { "name": "myapp.config", "last_updated": "2026-06-21T12:00:00Z" }
   ]
 }
 ```
@@ -77,7 +79,7 @@ Response:
 {
   "updated": [
     {
-      "name": "my-app/config",
+      "name": "myapp.config",
       "owners": ["team-a"],
       "retrievers": ["team-b"],
       "last_updated": "2026-06-21T14:30:00Z",
